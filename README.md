@@ -3,10 +3,11 @@
 
 ## Dependencies
 
+
 ### Using conda
 
 ```
-conda env create -f env.yml
+conda create --name <env> --file <this file>
 ```
 
 
@@ -15,6 +16,7 @@ conda env create -f env.yml
 ```
 pip install -r req.txt
 ```
+
 
 ### Dataset
 
