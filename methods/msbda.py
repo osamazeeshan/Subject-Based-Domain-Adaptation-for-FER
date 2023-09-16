@@ -22,6 +22,9 @@ import torch.nn.functional as F
 
 # from models.resnet_fer_modified import *
 from torch.utils.data import TensorDataset
+import torchvision
+from torchvision import transforms
+from scipy.special import softmax
 
 import config
 
@@ -37,15 +40,15 @@ def main(args):
         - TARGET_SUBJECT indicate which subject needed to be treated as a target subject 
         - create src and traget file name
     '''
-    NUM_SUBJECTS = 31
-    TARGET_SUBJECT = 31
+    NUM_SUBJECTS = 61
+    TARGET_SUBJECT = 61
 
     # Sources=Subjects=30
-    subject_list = [84, 32, 21, 37, 27, 73, 5, 42, 74, 46, 81, 41, 76, 6, 22, 2, 52, 45, 67, 19, 71, 1, 85, 15, 51, 83, 29, 64, 25, 28]
+    # subject_list = [84, 32, 21, 37, 27, 73, 5, 42, 74, 46, 81, 41, 76, 6, 22, 2, 52, 45, 67, 19, 71, 1, 85, 15, 51, 83, 29, 64, 25, 28]
 
     # Random Source (Subjects) = 60
-    # subject_list = [84, 32, 21, 37, 27, 73, 5, 42, 74, 46, 81, 41, 76, 6, 22, 2, 52, 45, 67, 19, 71, 1, 85, 15, 51, 83, 29, 64, 25, 28, 
-    # 3, 56, 61, 20, 14, 35, 54, 53, 34, 33, 57, 55, 36, 10, 72, 18, 16, 50, 75, 30, 62, 59, 78, 0, 43, 24, 38, 23, 39, 7]
+    subject_list = [84, 32, 21, 37, 27, 73, 5, 42, 74, 46, 81, 41, 76, 6, 22, 2, 52, 45, 67, 19, 71, 1, 85, 15, 51, 83, 29, 64, 25, 28, 
+    3, 56, 61, 20, 14, 35, 54, 53, 34, 33, 57, 55, 36, 10, 72, 18, 16, 50, 75, 30, 62, 59, 78, 0, 43, 24, 38, 23, 39, 7]
     '''
     Fix target subjects from BioVid:
         081014_w_27 [40]
@@ -160,12 +163,12 @@ def train_multi_model(n_epoch, model, data_loader1, data_loader2, optimizer, cri
 
         if train_source is False:
             if e % 20 == 0:
-                _data_arr, _prob_arr, _label_arr, _gt_arr = generate_tar_aug_conf_pl(model, tar_loader_for_PL, threshold, args.batch_size, args.is_pain_dataset)
+                _data_arr, _prob_arr, _label_arr, _gt_arr = generate_tar_aug_conf_pl(model, tar_loader_for_PL, threshold)
                 
                 for i in range(0,1):
                     target_wth_gt_labels = TensorDataset(torch.tensor(_data_arr), torch.tensor(_gt_arr))
                     tar_loader, _ = BaseDataset.load_tar_acpl_data(target_wth_gt_labels, args.batch_size, split=False)
-                    _data_arr, _prob_arr, _label_arr, _gt_arr = generate_tar_aug_conf_pl(model, tar_loader, threshold, args.batch_size, args.is_pain_dataset)
+                    _data_arr, _prob_arr, _label_arr, _gt_arr = generate_tar_aug_conf_pl(model, tar_loader, threshold)
                     
                 target_wth_labels = TensorDataset(torch.tensor(_data_arr), torch.tensor(_label_arr), torch.tensor(_prob_arr), torch.tensor(_gt_arr))
                 tar_loader, _ = BaseDataset.load_tar_acpl_data(target_wth_labels, args.batch_size, split=False)
@@ -293,18 +296,13 @@ def test(model, target_test_loader, batch_size, is_pain_dataset=False):
 # ------------------ ------------------------------------------------------------------ #
 class CustomHorizontalFlip:
     def __call__(self, image):
-        return transforms.Compose([
+        return torchvision.transforms.Compose([
             transforms.RandomHorizontalFlip(),
         ]) (image)
 
-def generate_tar_aug_conf_pl(model, target_domain, threshold, batch, is_pain_dataset=False):
+def generate_tar_aug_conf_pl(model, target_domain, threshold):
     model.eval()
-
-    # correct_aug = 0
-    # conf_correct = 0
-    # conf_index = 0
     print("\n**** Generating Augmented Confident Target Pseudo-labels **** \n")
-    # len_inter_dataset = len(target_domain)*batch if is_pain_dataset else len(target_domain.dataset) 
     
     data_arr = []
     prob_arr = []
@@ -318,12 +316,11 @@ def generate_tar_aug_conf_pl(model, target_domain, threshold, batch, is_pain_dat
 
     horizontal_flip_transform = CustomHorizontalFlip()
     with torch.no_grad():
-        for data, _ in target_domain:
-            data, target = data.cuda()
+        for data, target in target_domain:
+            data, target = data.cuda(), target.cuda()
             data = data.float()
             s_output = model.predict(data)
             pred = torch.max(s_output, 1)[1]
-            # correct += torch.sum(pred == target)
 
             augmented_images = [horizontal_flip_transform(tensor) for tensor in data]
 
@@ -331,16 +328,12 @@ def generate_tar_aug_conf_pl(model, target_domain, threshold, batch, is_pain_dat
             augmented_batch_tensor=augmented_batch_tensor.cuda()
             s_output_aug = model.predict(augmented_batch_tensor)
             pred_aug = torch.max(s_output_aug, 1)[1]
-            # correct_aug += torch.sum(pred_aug == target)
 
             softmax_pred_aug = get_target_pred_val(s_output_aug.detach().cpu().numpy(), pred_aug.detach().cpu().numpy())
             softmax_pred = get_target_pred_val(s_output.detach().cpu().numpy(), pred.detach().cpu().numpy())
             soft_pred_avg = np.add(softmax_pred, softmax_pred_aug)/2
             
             np_prob = np.array(soft_pred_avg)
-
-            # correct_pred_indx = torch.nonzero(pred == target).squeeze().detach().cpu().numpy()
-            # correct_pred_arr.extend(np_prob[correct_pred_indx]) if len(np.unique(correct_pred_indx)) > 1 else correct_pred_arr.append(np_prob[correct_pred_indx])
 
             conf_indxs = np.where(np_prob > threshold)[0]
             if len(conf_indxs) > 0:
@@ -370,20 +363,6 @@ def generate_tar_aug_conf_pl(model, target_domain, threshold, batch, is_pain_dat
                     
                 gt_arr.extend(np_gt_label[conf_indxs])
                 conf_label = np.array(conf_label)
-
-                # storing features and labels to create Tcl clusters
-                # conf_data_ten = torch.from_numpy(conf_data).cuda()
-                # conf_label_ten = torch.from_numpy(conf_label).cuda()
-                # # conf_data_feat = model.forward_features(conf_data_ten)
-                # conf_data_feat = model.forward_tsne(conf_data_ten)
-                                
-                # feat_memory_bank = np.concatenate((feat_memory_bank, conf_data_feat.cpu().detach().numpy())) if len(feat_memory_bank) > 0 else (conf_data_feat.cpu().detach().numpy())
-
-
-                # calculate prediction for confident pseudo labels
-                # conf_target = target[conf_indxs]
-                # conf_correct += torch.sum(torch.tensor(conf_label).detach().cpu() == conf_target.detach().cpu())
-                # conf_index += len(conf_indxs)
                 
             # creating Tpl; which contains all the data 
             data_arr.extend(data.detach().cpu().numpy())
@@ -426,7 +405,7 @@ if __name__ == '__main__':
     arg_parser.add_argument('--target_epochs', type=int, default=2)
     arg_parser.add_argument('--back_bone', default="resnet18", type=str)
 
-    arg_parser.add_argument('--train_src_subs', type=str, default=True)
+    arg_parser.add_argument('--train_src_subs', type=str, default=False)
     arg_parser.add_argument('--train_tar_sub', type=str, default=True)
     arg_parser.add_argument('--target_evaluation_only', type=bool, default=False)
     arg_parser.add_argument('--is_pain_dataset', type=bool, default=True)
