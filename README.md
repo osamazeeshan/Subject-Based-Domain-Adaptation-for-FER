@@ -1,4 +1,4 @@
-# Multi Subject Domain Adaptation for Facial Expression Recognition 
+# Subject-Based Domain Adaptation for Facial Expression Recognition 
 # Biovid Pain and Heat Dataset
 
 ## Dependencies
